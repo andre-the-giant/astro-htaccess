@@ -13,6 +13,7 @@
   "scripts": {
     "build": "tsc",
     "check": "astro check",
+    "prepare": "npm run build",
     "prettier": "prettier --write .",
     "prepack": "tsc"
   },

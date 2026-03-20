@@ -38,10 +38,17 @@ export interface Config {
 
 const errorPageRegex = /^\/([345]\d\d)$/;
 const spaceInCharacterMatchingRegex = /([^\\]|^)\[((?:\\\]|[^ ])*) ((?:\\\]|[^ ])*)\]/g;
+type ResolvedRoute = {
+  type: string;
+  pathname?: string;
+  pattern: string;
+  redirect?: string | { destination?: string };
+};
 
 export const integration = ({ generateHtaccessFile, errorPages, redirects, customRules }: Config = {}) => {
   let assetsDir: string | null = null;
   let enabled: boolean | null = true;
+  let resolvedRoutes: ResolvedRoute[] = [];
   const integration: AstroIntegration = {
     name: "htaccess",
     hooks: {
@@ -72,7 +79,10 @@ export const integration = ({ generateHtaccessFile, errorPages, redirects, custo
           assetsDir = fileURLToPath(config.outDir);
         }
       },
-      "astro:build:done": async ({ logger, routes }) => {
+      "astro:routes:resolved": ({ routes }) => {
+        resolvedRoutes = routes;
+      },
+      "astro:build:done": async ({ logger, pages }) => {
         if (enabled === null) {
           enabled =
             generateHtaccessFile === undefined
@@ -102,7 +112,7 @@ export const integration = ({ generateHtaccessFile, errorPages, redirects, custo
                     return "";
                   }
                   // Generate error pages from user input
-                  if (code in handledErrorCodes) {
+                  if (handledErrorCodes.has(code)) {
                     logger.error(`Duplicated error code ${code} detected!`);
                     error = true;
                     return "";
@@ -113,39 +123,37 @@ export const integration = ({ generateHtaccessFile, errorPages, redirects, custo
               : [],
           // Automatic error pages and Astro redirects
           () =>
-            (!error &&
-              routes.reduce((acc, { type, route, redirect }) => {
-                if (!error) {
-                  switch (type) {
-                    case "redirect":
-                      const destination = typeof redirect === "string" ? redirect : redirect?.destination;
-                      if (destination) {
-                        acc.push(`RedirectMatch 301 ^${route}(/(index.html)?)?$ ${destination}`);
-                      } else {
-                        logger.warn(`No destination found for redirect route "${route}"! Skipping.`);
-                      }
-                      break;
-                    case "page":
-                      if (errorPages === undefined) {
-                        // Find error pages programtically by matching on their routes (eg. `/404`)
-                        const match = route.match(errorPageRegex);
-                        if (match && match[1]) {
-                          const code = parseInt(match[1]);
-                          if (code in handledErrorCodes) {
-                            logger.error(`Duplicated error code ${code} detected!`);
-                            error = true;
-                            return acc;
-                          }
-                          handledErrorCodes.add(code);
-                          acc.push(`ErrorDocument ${code} ${route.endsWith(".html") ? route : `${route}.html`}`);
+            !error
+              ? [
+                  ...resolvedRoutes.reduce((acc, { type, pathname, pattern, redirect }) => {
+                    if (type !== "redirect") {
+                      return acc;
+                    }
+                    const destination = typeof redirect === "string" ? redirect : redirect?.destination;
+                    if (destination) {
+                      const route = pathname ?? pattern;
+                      acc.push(`RedirectMatch 301 ^${route}(/(index.html)?)?$ ${destination}`);
+                    } else {
+                      logger.warn(`No destination found for redirect route "${pathname ?? pattern}"! Skipping.`);
+                    }
+                    return acc;
+                  }, [] as string[]),
+                  ...(errorPages === undefined
+                    ? pages.flatMap(({ pathname }) => {
+                        const match = pathname.match(errorPageRegex);
+                        if (!match || !match[1]) {
+                          return [];
                         }
-                      }
-                      break;
-                  }
-                }
-                return acc;
-              }, [] as string[])) ||
-            [],
+                        const code = parseInt(match[1]);
+                        if (handledErrorCodes.has(code)) {
+                          return [];
+                        }
+                        handledErrorCodes.add(code);
+                        return [`ErrorDocument ${code} ${pathname.endsWith(".html") ? pathname : `${pathname}.html`}`];
+                      })
+                    : []),
+                ]
+              : [],
           // User-defined redirects
           () =>
             !error && redirects

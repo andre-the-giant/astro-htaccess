@@ -1,6 +1,6 @@
 # astro-htaccess
 
-SSG-only integration for Astro 4+ to generate an Apache `.htaccess` file, from user-defined rules and Astro's configuration.
+SSG-only integration for Astro 6+ to generate an Apache `.htaccess` file, from user-defined rules and Astro's configuration.
 
 ## Installation
 

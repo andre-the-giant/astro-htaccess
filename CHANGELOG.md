@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0
+
+Support Astro 7.
+
 ## 0.2.0
 
 Append new rules to existing `.htaccess` file instead of overwriting it.
